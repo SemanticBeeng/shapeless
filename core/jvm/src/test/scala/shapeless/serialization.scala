@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-16 Miles Sabin
+ * Copyright (c) 2015-18 Miles Sabin
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,6 @@ import java.io._
 import org.junit.Test
 import org.junit.Assert._
 
-import scala.collection.generic.CanBuildFrom
-
 import labelled._
 import nat._
 import ops.function._
@@ -35,6 +33,7 @@ import syntax.std.TupleOps
 import syntax.singleton._
 import syntax.zipper._
 import test._
+import serializationtestutils._
 import union._
 
 object SerializationTestDefns {
@@ -176,6 +175,7 @@ object SerializationTestDefns {
   type U = Union.`'a -> Int, 'b -> String, 'c -> Boolean`.T
   type RM = Record.`'c -> Boolean, 'd -> Double`.T
   type RM1 = Record.`'c -> Boolean, 'b -> String`.T
+  type RM2 = Record.`'b -> String, 'c -> Boolean`.T
   type KA = Witness.`'a`.T
   type KB = Witness.`'b`.T
   type KC = Witness.`'c`.T
@@ -205,6 +205,13 @@ object SerializationTestDefns {
         }
       }
 
+    implicit def constFunctor[T]: Functor[Const[T]#λ] =
+      new Functor[Const[T]#λ] {
+        def map[A, B](t: T)(f: A => B): T = t
+      }
+  }
+
+  trait Functor0 {
     // Induction step for coproducts
     implicit def ccons[F[_]](implicit icc: IsCCons1[F, Functor, Functor]): Functor[F] =
       new Functor[F] {
@@ -216,13 +223,6 @@ object SerializationTestDefns {
       new Functor[F] {
         def map[A, B](fa: F[A])(f: A => B): F[B] =
           gen.from(gen.fr.map(gen.to(fa))(f))
-      }
-  }
-
-  trait Functor0 {
-    implicit def constFunctor[T]: Functor[Const[T]#λ] =
-      new Functor[Const[T]#λ] {
-        def map[A, B](t: T)(f: A => B): T = t
       }
   }
 
@@ -271,23 +271,13 @@ object SerializationTestDefns {
       }
     }
   }
-
-  /**
-   * A `CanBuildFrom` for `List` implementing `Serializable`, unlike the one provided by the standard library.
-   */
-  implicit def listSerializableCanBuildFrom[T]: CanBuildFrom[List[T], T, List[T]] =
-    new CanBuildFrom[List[T], T, List[T]] with Serializable {
-      def apply(from: List[T]) = from.genericBuilder[T]
-      def apply() = List.newBuilder[T]
-    }
-
 }
 
 class SerializationTests {
   import SerializationTestDefns._
 
   @Test
-  def testStructures {
+  def testStructures: Unit = {
     val l = 23 :: "foo" :: true :: HNil
 
     type ISB = Int :+: String :+: Boolean :+: CNil
@@ -308,7 +298,7 @@ class SerializationTests {
   }
 
   @Test
-  def testSyntax {
+  def testSyntax: Unit = {
     val l = 23 :: "foo" :: true :: HNil
 
     type ISB = Int :+: String :+: Boolean :+: CNil
@@ -342,7 +332,7 @@ class SerializationTests {
   }
 
   @Test
-  def testHListOps {
+  def testHListOps: Unit = {
     import ops.hlist._
 
     type L = Int :: String :: Boolean :: HNil
@@ -552,7 +542,7 @@ class SerializationTests {
   }
 
   @Test
-  def testRecords {
+  def testRecords: Unit = {
     import ops.record._
 
     type FA = FieldType[KA, Int]
@@ -589,6 +579,8 @@ class SerializationTests {
     assertSerializable(Remover[R, KA])
     assertSerializable(Remover[R, KB])
 
+    assertSerializable(RemoveAll[R, RM2])
+
     assertSerializable(Renamer[R, KA, KB])
     assertSerializable(Renamer[R, KC, KA])
     assertSerializable(Renamer[R, KB, KC])
@@ -610,7 +602,7 @@ class SerializationTests {
   }
 
   @Test
-  def testCoproducts {
+  def testCoproducts: Unit = {
     import ops.coproduct._
 
     type L = Int :+: String :+: Boolean :+: CNil
@@ -725,7 +717,7 @@ class SerializationTests {
   }
 
   @Test
-  def testUnions {
+  def testUnions: Unit = {
     import ops.union._
 
     assertSerializable(Selector[U, KA])
@@ -748,7 +740,7 @@ class SerializationTests {
   }
 
   @Test
-  def testTuples {
+  def testTuples: Unit = {
     import ops.tuple._
 
     type L = (Int, String, Boolean)
@@ -903,7 +895,7 @@ class SerializationTests {
   }
 
   @Test
-  def testPoly {
+  def testPoly: Unit = {
     assertSerializable(poly.identity)
     assertSerializable(isDefined)
     assertSerializable(productElements)
@@ -915,7 +907,7 @@ class SerializationTests {
   }
 
   @Test
-  def testNats {
+  def testNats: Unit = {
     assertSerializable(_0)
     assertSerializable(_1)
     assertSerializable(_2)
@@ -937,7 +929,7 @@ class SerializationTests {
   }
 
   @Test
-  def testFunctions {
+  def testFunctions: Unit = {
     assertSerializable(FnToProduct[() => String])
     assertSerializable(FnToProduct[(Int) => String])
     assertSerializable(FnToProduct[(Int, Boolean) => String])
@@ -948,7 +940,7 @@ class SerializationTests {
   }
 
   @Test
-  def testGeneric {
+  def testGeneric: Unit = {
     assertSerializable(Generic[(Int, String, Boolean)])
     assertSerializable(Generic[Option[Int]])
 
@@ -962,19 +954,14 @@ class SerializationTests {
   }
 
   @Test
-  def testTraversable {
+  def testTraversable: Unit = {
     type L = Int :: String :: Boolean :: HNil
     assertSerializable(FromTraversable[L])
-
-    // To satisfy serialization of `ToSizedHList` we must provide a serializable `IsTraversableLike`
-    import scala.collection.generic.IsTraversableLike
-    implicit val hack: IsTraversableLike[List[Int]] { type A = Int } = null
     assertSerializable(ToSizedHList[List, Int, _4])
-
   }
 
   @Test
-  def testTypeable {
+  def testTypeable: Unit = {
     assertSerializable(Typeable[Any])
     assertSerializable(Typeable[AnyRef])
     assertSerializable(Typeable[AnyVal])
@@ -1027,14 +1014,14 @@ class SerializationTests {
   }
 
   @Test
-  def testHMap {
+  def testHMap: Unit = {
     assertSerializable(HMap[(Set ~?> Option)#λ](Set("foo") -> Option("bar"), Set(23) -> Option(13)))
     assertSerializable(new (Set ~?> Option))
     assertSerializable(implicitly[(Set ~?> Option)#λ[Set[Int], Option[Int]]])
   }
 
   @Test
-  def testLazy {
+  def testLazy: Unit = {
     assertSerializable(Lazy(23))
 
     assertSerializableBeforeAfter(implicitly[Lazy[Generic[Wibble]]])(_.value)
@@ -1045,7 +1032,7 @@ class SerializationTests {
   }
 
   @Test
-  def testZipper {
+  def testZipper: Unit = {
     import ops.zipper._
 
     val l = 23 :: "foo" :: true :: HNil
@@ -1114,7 +1101,7 @@ class SerializationTests {
   }
 
   @Test
-  def testConstraints {
+  def testConstraints: Unit = {
     type L = Int :: String :: Boolean :: HNil
     type OL = Option[Int] :: Option[String] :: Option[Boolean] :: HNil
     type I3 = Int :: Int :: Int :: HNil
@@ -1141,7 +1128,7 @@ class SerializationTests {
   }
 
   @Test
-  def testSybclass {
+  def testSybclass: Unit = {
     type L = Int :: String :: Boolean :: HNil
     type C = Int :+: String :+: Boolean :+: CNil
 
@@ -1164,7 +1151,7 @@ class SerializationTests {
   }
 
   @Test
-  def testFunctor {
+  def testFunctor: Unit = {
     assertSerializableBeforeAfter(Functor[Some])(_.map(Some(2))(_.toString))
     assertSerializableBeforeAfter(Functor[Option])(_.map(Option(2))(_.toString))
     assertSerializableBeforeAfter(Functor[Tree])(_.map(Leaf(2))(_.toString))
@@ -1172,7 +1159,7 @@ class SerializationTests {
   }
 
   @Test
-  def testShow {
+  def testShow: Unit = {
     // I had to disable the first two during https://github.com/milessabin/shapeless/pull/435, with scala 2.12.0-M2.
     // Don't know why they keep capturing their outer class, and the next two don't.
 
@@ -1186,7 +1173,7 @@ class SerializationTests {
   }
 
   @Test
-  def testLenses {
+  def testLenses: Unit = {
     val l1 = optic[Tree[Int]]
     val l2 = optic[Tree[Int]][Node[Int]]
     val l3 = optic[Tree[Int]][Node[Int]].l
@@ -1219,7 +1206,7 @@ class SerializationTests {
   }
 
   @Test
-  def testDefault {
+  def testDefault: Unit = {
     val d1 = Default[DefaultTestDefinitions.CC]
     val d2 = Default.AsRecord[DefaultTestDefinitions.CC]
     val d3 = Default.AsOptions[DefaultTestDefinitions.CC]
