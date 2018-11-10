@@ -39,7 +39,7 @@ object serializationtestutils {
       def newBuilder(from: From): Builder[T, List[T]] = List.newBuilder
     }
 
-  implicit def listSerializableIsIterableLike[T]: IsIterableLike[List[T]] { type A = T } =
+  implicit def listSerializableIsIterableLike[T]: IsRegularIterable[List[T]] { type A = T } =
     new IsIterableLike[List[T]] with Serializable {
       type A = T
       val conversion: List[T] => IterableOps[T, Iterable, List[T]] = identity
