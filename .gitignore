@@ -4,6 +4,7 @@ scripts/travis-config.sh
 
 scratch/
 target/
+project/.sbtboot/
 project/.boot/
 project/.ivy/
 
